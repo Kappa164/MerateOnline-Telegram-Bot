@@ -50,12 +50,13 @@ class Statistiche:
         self.trovate = 0
         self.inviate = 0
         self.errori = []
+        self.altri = 0
 
     def errore(self, testo):
         if len(self.errori) < 10:
-            self.errori.append(f"{datetime.now():%H:%M} {testo}")
+            self.errori.append(f"{datetime.now():%H:%M}: {testo}")
         else:
-            self.errori[-1] = f"... e altri ({len(self.errori)}+)"
+            self.altri += 1
 
 
 stats = Statistiche()
@@ -91,7 +92,7 @@ class MerateNewsBot:
         ''')
         conn.commit()
         conn.close()
-        logger.warning("Database inizializzato")
+        logger.info("The database is ready")
 
     # --CONTROLLA SE UNA NOTIZIA È STATA GIÀ INVIATA--
     def notizia_inviata(self, url_notizia: str) -> bool:
@@ -209,8 +210,8 @@ class MerateNewsBot:
                     if notizia and not self.notizia_inviata(notizia['url']):
                         notizie.append(notizia)
                 except Exception as e:
-                    logger.warning(f"Errore parsing articolo: {e}")
-                    stats.errore(f"articolo non interpretato: {e}")
+                    logger.warning(f"An article could not be parsed: {e}")
+                    stats.errore(f"an article could not be parsed ({e})")
                     continue
             
             #ordina dalla meno recente alla più recente (prima mando le notizie vecchie)
@@ -220,8 +221,8 @@ class MerateNewsBot:
             return notizie
             
         except Exception as e:
-            logger.error(f"Errore durante lo scraping: {e}")
-            stats.errore(f"pagina del comune non letta: {e}")
+            logger.error(f"The news page could not be read: {e}")
+            stats.errore(f"the news page could not be read ({e})")
             return []
 
     #--PARSING SINGOLO ARTICOLO--
@@ -310,8 +311,8 @@ class MerateNewsBot:
             return True
             
         except Exception as e:
-            logger.error(f"Errore invio Telegram: {e}")
-            stats.errore(f"invio a Telegram non riuscito: {e}")
+            logger.error(f"A news item could not be sent to Telegram: {e}")
+            stats.errore(f"a news item could not be sent to Telegram ({e})")
             return False
 
     #--CONTROLLA E INVIA NUOVE NOTIZIE--
@@ -350,30 +351,27 @@ class MerateNewsBot:
     #--RIEPILOGO DELLA GIORNATA APPENA FINITA--
     def riepilogo(self):
         giorno = datetime.now() - timedelta(minutes=5)
-        righe = [
-            f"recap {giorno:%d/%m/%Y}",
-            f"check effettuati: {stats.controlli}",
-            f"notizie trovate: {stats.trovate}",
-            f"notizie inviate: {stats.inviate}",
-            f"problemi: {len(stats.errori) if stats.errori else 'nessuno'}",
-        ]
-        righe += [f"  - {e}" for e in stats.errori]
-        # una riga per chiamata: ognuna arriva al log con il suo livello INFO
-        for r in righe:
-            logger.info(r)
+        problemi = len(stats.errori) + stats.altri
+        logger.info(
+            f"Daily recap for {giorno:%d/%m/%Y}: {stats.controlli} checks run, "
+            f"{stats.trovate} news found and {stats.inviate} sent, "
+            + (f"{problemi} problem{'s' if problemi != 1 else ''}" if problemi else "no problems")
+        )
+        # un problema per riga, con il livello INFO: sono già stati segnalati
+        for e in stats.errori:
+            logger.info(f"Problem at {e}")
+        if stats.altri:
+            logger.info(f"...and {stats.altri} more problems")
         stats.azzera()
 
     #--ESEGUI UNA VOLTA LA RICERCA--
     def esegui_singolo(self):
-        logger.info(f"AVVIO BOT NOTIZIE {COMUNE.upper()}")
-        logger.info("=" * 50)
+        logger.info(f"The news bot for {COMUNE} is running a single check")
         self.check_invia_notizie()
 
     #--AVVIA IN MODALITÀ SERVER--
     def avvia_server(self):
-        logger.info(f"AVVIO BOT NOTIZIE {COMUNE.upper()} - MODALITÀ SERVER")
-        logger.info(f"Controllo ogni {COOLDOWN} minuti, riepilogo ogni giorno a mezzanotte")
-        logger.info("=" * 50)
+        logger.info(f"The news bot for {COMUNE} has started: it checks every {COOLDOWN} minutes and sends a recap at midnight")
         
         # Esegui immediatamente un controllo
         self.check_invia_notizie()
@@ -388,8 +386,8 @@ class MerateNewsBot:
                 schedule.run_pending()
                 time.sleep(20)  #controlla tre volte al minuto
             except Exception as e:
-                logger.error(f"Errore nel loop principale: {e}")
-                stats.errore(f"loop principale: {e}")
+                logger.error(f"The main loop failed: {e}")
+                stats.errore(f"the main loop failed ({e})")
                 time.sleep(60)  #aspetta 1 minuto e riprova
 
 #--MAIN--
