@@ -1,0 +1,16 @@
+# Bot Telegram MerateOnline
+services:
+  merateonline:
+    build: .
+    container_name: merateonline
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: "localhost:24224"
+        fluentd-async: "true"
+        fluentd-retry-wait: "2s"
+        fluentd-max-retries: "30"
+        tag: "{{.Name}}"
