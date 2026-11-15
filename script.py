@@ -6,6 +6,7 @@ import re
 import sqlite3
 import os
 import logging
+import json
 import schedule
 from config import BOT_TOKEN, CHANNEL_ID, SERVER_MODE, COMUNE, URL, COOLDOWN
 
@@ -51,6 +52,11 @@ class Statistiche:
         self.inviate = 0
         self.errori = []
         self.altri = 0
+        self.titoli = []   # (ora, titolo) delle notizie inviate, per la scheda
+
+    def inviata(self, titolo):
+        self.inviate += 1
+        self.titoli.append((f"{datetime.now():%H:%M}", titolo))
 
     def errore(self, testo):
         if len(self.errori) < 10:
@@ -339,7 +345,7 @@ class MerateNewsBot:
             if self.send_telegram_message(message):
                 self.mark_notizia_inviata(news['url'], news['titolo'])
                 cont +=1
-                stats.inviate += 1
+                stats.inviata(news['titolo'])
                 logger.debug("Notizia inviata")
             
             # Wait tra un messaggio e l'altro
@@ -352,16 +358,37 @@ class MerateNewsBot:
     def riepilogo(self):
         giorno = datetime.now() - timedelta(minutes=5)
         problemi = len(stats.errori) + stats.altri
+        # il testo resta per l'analisi IA e per il disco ([QUIET]); su Telegram
+        # va la scheda [REPORT], che klogger disegna come immagine
         logger.info(
-            f"Daily recap for {giorno:%d/%m/%Y}: {stats.controlli} checks run, "
+            f"[QUIET] Daily recap for {giorno:%d/%m/%Y}: {stats.controlli} checks run, "
             f"{stats.trovate} news found and {stats.inviate} sent, "
             + (f"{problemi} problem{'s' if problemi != 1 else ''}" if problemi else "no problems")
         )
-        # un problema per riga, con il livello INFO: sono già stati segnalati
         for e in stats.errori:
-            logger.info(f"Problem at {e}")
+            logger.info(f"[QUIET] Problem at {e}")
         if stats.altri:
-            logger.info(f"...and {stats.altri} more problems")
+            logger.info(f"[QUIET] ...and {stats.altri} more problems")
+
+        sezioni = [{
+            "title": "News sent",
+            "wide": True,
+            "table": {"cols": ["Time", "Title"], "widths": [0.12, 0.88],
+                      "rows": [[ora, titolo] for ora, titolo in stats.titoli[-15:]] or [["", "no news today"]]},
+        }]
+        if problemi:
+            righe = [[e[:5], e[7:], "bad"] for e in stats.errori]
+            if stats.altri:
+                righe.append(["", f"...and {stats.altri} more", "bad"])
+            sezioni.append({"title": "Problems", "wide": True, "rows": righe})
+        scheda = {
+            "title": f"MerateOnline · {COMUNE}",
+            "subtitle": f"Daily recap · {giorno:%d/%m/%Y}",
+            "kpis": [["Checks", str(stats.controlli)], ["News found", str(stats.trovate)],
+                     ["News sent", str(stats.inviate)], ["Problems", str(problemi)]],
+            "sections": sezioni,
+        }
+        logger.info("[REPORT] " + json.dumps(scheda, ensure_ascii=False))
         stats.azzera()
 
     #--ESEGUI UNA VOLTA LA RICERCA--
