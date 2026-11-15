@@ -1,12 +1,11 @@
 # database
 news_bot.db
 
-# config
-config.py
-
 #ds store
 .DS_Store
 
 # python
 __pycache__/
 *.pyc
+# segreti
+.env

@@ -29,112 +29,69 @@
 .
 ├── script.py
 ├── config.py
-├── news_bot.db
-├── .gitignore
+├── .env.example
+├── .env            (da creare, escluso da git)
+├── news_bot.db     (generato automaticamente)
+├── Dockerfile
+├── compose.yaml
 └── README.md
 ```
 
 ### File principali
 
 - `script.py` → script principale del bot
-- `config.py` → file di configurazione
-- `news_bot.db` → database generato autoamaticamente
+- `config.py` → legge la configurazione dalle variabili d'ambiente
+- `.env` → i tuoi valori (token, canale, comune…): **non va mai committato**
+- `news_bot.db` → database generato automaticamente
 
 ---
 
-## 🔧 Configurazione e utilizzo
+## 🔧 Configurazione
 
-Inserisci i valori in `config.py` come segue:
+Copia il file di esempio e inserisci i tuoi valori:
 
-#### `BOT_TOKEN`
-Token del bot Telegram. Usa **@BotFather** per creare un bot e ottenere il suo token.
-
-Esempio:
-
-```python
-BOT_TOKEN = "1234567890:ABCDEF..."
+```bash
+cp .env.example .env
 ```
 
-#### `CHANNEL_ID`
-Canale o chat dove inviare le notizie.
-
-Esempio:
-
-```python
-CHANNEL_ID = "@nome_canale"
-```
-
-se non funziona, usa l'ID del canale o della chat ottenibile usando **@MyIDBot**
-
-```python
-CHANNEL_ID = "-1001234567890"
-```
-
+| Variabile | Obbligatoria | Descrizione |
+| --- | --- | --- |
+| `BOT_TOKEN` | sì | Token del bot Telegram, da **@BotFather** |
+| `CHANNEL_ID` | sì | Canale o chat dove inviare le notizie: `@nome_canale` oppure l'ID numerico (es. `-1001234567890`, ottenibile con **@MyIDBot**) |
+| `COMUNE` | no (`Merate`) | Nome del comune: viene tolto dal titolo e dalla categoria delle notizie |
+| `NEWS_URL` | no (Merate) | Pagina di MerateOnline da cui fare scraping |
+| `SERVER_MODE` | no (`true`) | `true` resta in ascolto, `false` invia le notizie una volta sola |
+| `COOLDOWN` | no (`10`) | Minuti tra una ricerca e l'altra |
 
 > Il bot deve essere amministratore del canale, altrimenti non potrà inviare messaggi.
 
-#### `COMUNE`
-Nome del comune di cui si vogliono ottenere le notizie. 
-
-Questa stringa serve a rimuovere il nome del paese dal titolo (spesso viene messo come prefisso) e dalla categoria.
-
-Esempio:
-
-```python
-COMUNE = "Merate"
-```
-
-#### `URL`
-URL del sito da cui fare scraping.
-
-#### COME OTTENGO L'URL DEL MIO COMUNE?
+#### Come ottengo l'URL del mio comune?
 
 1) apri https://www.merateonline.it/p/cerca-comune/598
 2) seleziona il comune che ti interessa
-3) copia il link e assegnalo a `URL`
-
-Esempio per Merate:
-
-```python
-URL = "https://www.merateonline.it/articoli/l/56/merate"
-```
-
-#### `SERVER_MODE`
-È possibile eseguire lo script una sola volta oppure avviare la modalità server in modo da scansionare automaticamente MerateOnline cercando nuovi articoli.
-
-Per disabilitare la server mode impostare la variabile a **False**:
-
-```python
-SERVER_MODE = False
-```
-
-#### `COOLDOWN`
-Numero di minuti di attesa tra una ricerca e l'altra (in minuti).
-
-Esempio:
-
-```python
-COOLDOWN = 10    #ogni 10 minuti
-```
-
-Più è basso, più spesso il bot controllerà nuove notizie.
+3) copia il link e assegnalo a `NEWS_URL`
 
 ---
-### Installa le dipendenze
+
+## ▶️ Avvio
+
+### Con Docker
 
 ```bash
-pip install requests beautifulsoup4
+docker compose up -d --build
 ```
 
-### Avvia lo script
+`compose.yaml` carica automaticamente il file `.env`.
+
+### Senza Docker
 
 ```bash
+pip install -r requirements.txt
+set -a; . ./.env; set +a
 python script.py
 ```
 
 ---
-
-
 
 ## 🔨 Possibili miglioramenti futuri
 
