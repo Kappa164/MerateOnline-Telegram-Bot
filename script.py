@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import sqlite3
 import os
@@ -36,6 +36,29 @@ if not logger.handlers:
 
 logger.propagate = False
 #---------------------
+
+
+# --RIEPILOGO GIORNALIERO--
+# I controlli di routine non vanno nel log: si contano e a mezzanotte esce un
+# solo riepilogo della giornata. Gli errori vengono comunque segnalati subito.
+class Statistiche:
+    def __init__(self):
+        self.azzera()
+
+    def azzera(self):
+        self.controlli = 0
+        self.trovate = 0
+        self.inviate = 0
+        self.errori = []
+
+    def errore(self, testo):
+        if len(self.errori) < 10:
+            self.errori.append(f"{datetime.now():%H:%M} {testo}")
+        else:
+            self.errori[-1] = f"... e altri ({len(self.errori)}+)"
+
+
+stats = Statistiche()
 
 
 class MerateNewsBot:
@@ -167,7 +190,7 @@ class MerateNewsBot:
     # --WEBSCRAPING--
     def scrape_notizie(self) -> list:
         url = URL
-        logger.info(f"Scraping notizie da merateonline.it...")
+        logger.debug("Scraping notizie da merateonline.it...")
         
         try:
             risposta = self.session.get(url, timeout=15)
@@ -176,7 +199,7 @@ class MerateNewsBot:
             soup = BeautifulSoup(risposta.content, 'html.parser')
             
             articoli = soup.find_all('article', class_='section_margin') #prende tutti gli articoli
-            logger.info(f"Trovati {len(articoli)} articoli")
+            logger.debug(f"Trovati {len(articoli)} articoli")
             
             notizie = []
             
@@ -187,16 +210,18 @@ class MerateNewsBot:
                         notizie.append(notizia)
                 except Exception as e:
                     logger.warning(f"Errore parsing articolo: {e}")
+                    stats.errore(f"articolo non interpretato: {e}")
                     continue
             
             #ordina dalla meno recente alla più recente (prima mando le notizie vecchie)
             notizie.sort(key=lambda x: x['datetime'])
             
-            logger.info(f"{len(notizie)} nuove notizie da inviare")
+            logger.debug(f"{len(notizie)} nuove notizie da inviare")
             return notizie
             
         except Exception as e:
             logger.error(f"Errore durante lo scraping: {e}")
+            stats.errore(f"pagina del comune non letta: {e}")
             return []
 
     #--PARSING SINGOLO ARTICOLO--
@@ -286,37 +311,57 @@ class MerateNewsBot:
             
         except Exception as e:
             logger.error(f"Errore invio Telegram: {e}")
+            stats.errore(f"invio a Telegram non riuscito: {e}")
             return False
 
     #--CONTROLLA E INVIA NUOVE NOTIZIE--
     def check_invia_notizie(self):
-        logger.info("Controllo nuove notizie...")
+        logger.debug("Controllo nuove notizie...")
+        stats.controlli += 1
         
         # Scraping notizie
         nuove_notizie = self.scrape_notizie()
         
         if not nuove_notizie:
-            logger.warning("Nessuna nuova notizia")
+            logger.debug("Nessuna nuova notizia")
             return
         
-        logger.info(f"Invio {len(nuove_notizie)} nuove notizie...")
+        stats.trovate += len(nuove_notizie)
+        logger.debug(f"Invio {len(nuove_notizie)} nuove notizie...")
         
         # Invio notizie (dalla meno recente alla più recente)
         cont = 0
         for i, news in enumerate(nuove_notizie, 1):
-            logger.info(f"Invio {i}/{len(nuove_notizie)}: {news['titolo'][:50]}...")
+            logger.debug(f"Invio {i}/{len(nuove_notizie)}: {news['titolo'][:50]}...")
             
             message = self.formatta_messaggio_telegram(news)
             if self.send_telegram_message(message):
                 self.mark_notizia_inviata(news['url'], news['titolo'])
                 cont +=1
-                logger.info("Notizia inviata")
+                stats.inviate += 1
+                logger.debug("Notizia inviata")
             
             # Wait tra un messaggio e l'altro
             if i < len(nuove_notizie):
                 time.sleep(3)  # 3 secondi tra un messaggio e l'altro
         
-        logger.info(f"COMPLETATO: {cont}/{len(nuove_notizie)} notizie inviate")
+        logger.debug(f"COMPLETATO: {cont}/{len(nuove_notizie)} notizie inviate")
+
+    #--RIEPILOGO DELLA GIORNATA APPENA FINITA--
+    def riepilogo(self):
+        giorno = datetime.now() - timedelta(minutes=5)
+        righe = [
+            f"recap {giorno:%d/%m/%Y}",
+            f"check effettuati: {stats.controlli}",
+            f"notizie trovate: {stats.trovate}",
+            f"notizie inviate: {stats.inviate}",
+            f"problemi: {len(stats.errori) if stats.errori else 'nessuno'}",
+        ]
+        righe += [f"  - {e}" for e in stats.errori]
+        # una riga per chiamata: ognuna arriva al log con il suo livello INFO
+        for r in righe:
+            logger.info(r)
+        stats.azzera()
 
     #--ESEGUI UNA VOLTA LA RICERCA--
     def esegui_singolo(self):
@@ -327,7 +372,7 @@ class MerateNewsBot:
     #--AVVIA IN MODALITÀ SERVER--
     def avvia_server(self):
         logger.info(f"AVVIO BOT NOTIZIE {COMUNE.upper()} - MODALITÀ SERVER")
-        logger.info(f"Controllo ogni {COOLDOWN} minuti")
+        logger.info(f"Controllo ogni {COOLDOWN} minuti, riepilogo ogni giorno a mezzanotte")
         logger.info("=" * 50)
         
         # Esegui immediatamente un controllo
@@ -335,14 +380,16 @@ class MerateNewsBot:
         
         # Schedula la ricerca di notizie
         schedule.every(COOLDOWN).minutes.do(self.check_invia_notizie)
+        schedule.every().day.at("00:00").do(self.riepilogo)
         
         #loop infinito
         while True:
             try:
                 schedule.run_pending()
-                time.sleep(60)  #controlla ogni minuto
+                time.sleep(20)  #controlla tre volte al minuto
             except Exception as e:
                 logger.error(f"Errore nel loop principale: {e}")
+                stats.errore(f"loop principale: {e}")
                 time.sleep(60)  #aspetta 1 minuto e riprova
 
 #--MAIN--

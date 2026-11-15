@@ -4,6 +4,8 @@ services:
     build: .
     container_name: merateonline
     env_file: .env
+    environment:
+      TZ: Europe/Rome
     volumes:
       - .:/app
     restart: unless-stopped
