@@ -101,11 +101,17 @@ class MerateNewsBot:
         logger.info("The database is ready")
 
     # --CONTROLLA SE UNA NOTIZIA È STATA GIÀ INVIATA--
+    # Il link contiene il titolo: se la redazione lo corregge, cambia il link ma non il
+    # numero dell'articolo (/notizie/<numero>/...). Si confronta quindi il numero.
     def notizia_inviata(self, url_notizia: str) -> bool:
         conn = sqlite3.connect(self.nome_db)
         cursor = conn.cursor()
-        # Controllo per URL
-        cursor.execute("SELECT 1 FROM notizie WHERE url_notizia = ?", (url_notizia,))
+        numero = re.search(r'/notizie/(\d+)/', url_notizia)
+        if numero:
+            cursor.execute("SELECT 1 FROM notizie WHERE url_notizia LIKE ?",
+                           (f"%/notizie/{numero.group(1)}/%",))
+        else:
+            cursor.execute("SELECT 1 FROM notizie WHERE url_notizia = ?", (url_notizia,))
         result = cursor.fetchone()
         conn.close()
         return result is not None
