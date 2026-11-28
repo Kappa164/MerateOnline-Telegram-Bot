@@ -82,6 +82,7 @@ class MerateNewsBot:
         
         #database per le notizie
         self.nome_db = "news_bot.db"
+        self.fallimenti = 0   # letture della pagina fallite di fila
         self.init_database()
 
     # --INIZIALLIZZAZIONE DATABASE--
@@ -209,6 +210,10 @@ class MerateNewsBot:
             risposta = self.session.get(url, timeout=15)
             risposta.raise_for_status()
             
+            if self.fallimenti >= 3:
+                logger.info(f"The news page can be read again after {self.fallimenti} failed checks")
+            self.fallimenti = 0
+            
             soup = BeautifulSoup(risposta.content, 'html.parser')
             
             articoli = soup.find_all('article', class_='section_margin') #prende tutti gli articoli
@@ -233,7 +238,13 @@ class MerateNewsBot:
             return notizie
             
         except Exception as e:
-            logger.error(f"The news page could not be read: {e}")
+            # il sito ogni tanto risponde 500 o va in timeout: un solo controllo fallito
+            # è un avviso, l'errore (con notifica) arriva se fallisce 3 volte di fila
+            self.fallimenti += 1
+            if self.fallimenti >= 3:
+                logger.error(f"The news page could not be read ({self.fallimenti} checks in a row): {e}")
+            else:
+                logger.warning(f"The news page could not be read, retrying at the next check: {e}")
             stats.errore(f"the news page could not be read ({e})")
             return []
 
